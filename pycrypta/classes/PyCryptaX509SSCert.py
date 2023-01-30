@@ -137,7 +137,13 @@ class PyCryptaX509SSCert:
         # Write our certificate out to disk.
         with open("certificate.pem", "wb") as f:
             f.write(cert.public_bytes(serialization.Encoding.PEM))
-        
+    
+    @staticmethod
+    def get_key_usage(digital_signature=False, content_commitment=False, key_encipherment=False, data_encipherment=False, key_agreement=False, key_cert_sign=False, crl_sign=False, encipher_only=False, decipher_only=False):
+        from cryptography import x509
+
+        return x509.KeyUsage(digital_signature, content_commitment, key_encipherment, data_encipherment, key_agreement, key_cert_sign, crl_sign, encipher_only, decipher_only)
+
     @staticmethod
     def create_ca(key):
         import datetime
@@ -168,7 +174,9 @@ class PyCryptaX509SSCert:
                 datetime.datetime.utcnow() + datetime.timedelta(days=10)
             ).add_extension(
                 x509.BasicConstraints(ca=True, path_length=None), critical=True
-            ).add_extension(x509.SubjectKeyIdentifier(b'1234'), critical=False
+            ).add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False
+            ).add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(key.public_key()), critical=False
+            ).add_extension(PyCryptaX509SSCert.get_key_usage(True, True, True, True, True, True, True, True, True), critical=False
             ).sign(key, hashes.SHA256(), default_backend())
 
         print(x509.AuthorityKeyIdentifier.oid.dotted_string)
