@@ -154,9 +154,12 @@ class PyCryptaX509SSCert:
         from cryptography.hazmat.backends import default_backend
 
         subject = issuer = x509.Name([
-            x509.NameAttribute(NameOID.COMMON_NAME, u'Coducus CA'),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, u'Codicus inc.'),
-            x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, u'Codicus CA OU')
+            x509.NameAttribute(NameOID.COUNTRY_NAME, u"RU"),
+            x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, u"MOSCOW"),
+            x509.NameAttribute(NameOID.LOCALITY_NAME, u"MOSCOW"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, u"Codiucs inc."),
+            x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, u'Codicus CA'),
+            x509.NameAttribute(NameOID.COMMON_NAME, u"Codicus Authority Center")
         ])
 
         certificate = x509.CertificateBuilder(
@@ -176,14 +179,13 @@ class PyCryptaX509SSCert:
                 x509.BasicConstraints(ca=True, path_length=None), critical=True
             ).add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False
             ).add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(key.public_key()), critical=False
-            ).add_extension(PyCryptaX509SSCert.get_key_usage(True, True, True, True, True, True, True, True, True), critical=False
+            ).add_extension(PyCryptaX509SSCert.get_key_usage(key_cert_sign=True, crl_sign=True), critical=False
             ).sign(key, hashes.SHA256(), default_backend())
 
-        print(x509.AuthorityKeyIdentifier.oid.dotted_string)
-        with open('ca.key.pem', 'wb') as f:
-            f.write(key.private_bytes(encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.TraditionalOpenSSL,
-            encryption_algorithm=serialization.BestAvailableEncryption(b"pass")))
+        # with open('ca.key.pem', 'wb') as f:
+        #     f.write(key.private_bytes(encoding=serialization.Encoding.PEM,
+        #     format=serialization.PrivateFormat.TraditionalOpenSSL,
+        #     encryption_algorithm=serialization.BestAvailableEncryption(b"pass")))
 
         with open('ca.crt.pem', 'wb') as f:
             f.write(certificate.public_bytes(encoding=serialization.Encoding.PEM))
