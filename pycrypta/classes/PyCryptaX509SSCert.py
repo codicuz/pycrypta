@@ -210,7 +210,7 @@ class PyCryptaX509SSCert:
         return x509.KeyUsage(digital_signature, content_commitment, key_encipherment, data_encipherment, key_agreement, key_cert_sign, crl_sign, encipher_only, decipher_only)
 
     @staticmethod
-    def create_ca(key):
+    def create_ca(сa_certificate_file_name: str, key):
         import datetime
         from cryptography import x509
         from cryptography.x509.oid import NameOID
@@ -247,7 +247,7 @@ class PyCryptaX509SSCert:
             ).add_extension(PyCryptaX509SSCert.get_key_usage(key_cert_sign=True, crl_sign=True), critical=False
             ).sign(key, hashes.SHA256(), default_backend())
 
-        with open('ca.crt.pem', 'wb') as f:
+        with open(сa_certificate_file_name + '.crt.pem', 'wb') as f:
             f.write(certificate.public_bytes(encoding=serialization.Encoding.PEM))
         
     @staticmethod
