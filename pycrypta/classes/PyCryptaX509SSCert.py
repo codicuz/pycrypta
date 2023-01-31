@@ -171,7 +171,7 @@ class PyCryptaX509SSCert:
             f.write(cert.public_bytes(serialization.Encoding.PEM))
     
     @staticmethod
-    def create_ceritificate(ca_certificate, csr, certificate_file_name: str, ca_key, cert_key_pass = None):
+    def create_ceritificate(ca_certificate, csr, certificate_file_name: str, ca_key):
         import datetime
         from cryptography import x509
         from cryptography.hazmat.primitives import hashes
@@ -182,27 +182,23 @@ class PyCryptaX509SSCert:
         # subject = csr.subject
         issuer = ca_certificate.issuer
 
-        cert = x509.CertificateBuilder(
-            ).subject_name(
-                subject.subject
-            ).issuer_name(
-                issuer
-            ).public_key(
-                subject.public_key()
-            ).serial_number(
-                x509.random_serial_number()
-            ).not_valid_before(
-                datetime.datetime.utcnow()
-            ).not_valid_after(
-                # Our certificate will be valid for 10 days
-                datetime.datetime.utcnow() + datetime.timedelta(days=10)
-            ).add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()), critical=False
-            # Sign our certificate with our private key
-            ).sign(ca_key, hashes.SHA256(), backend=default_backend())
+        certificate = x509.CertificateBuilder()
+        certificate = certificate.subject_name(subject.subject)
+        certificate = certificate.issuer_name(issuer)
+        certificate = certificate.public_key(subject.public_key())
+        certificate = certificate.serial_number(x509.random_serial_number())
+        certificate = certificate.not_valid_before(datetime.datetime.utcnow())
+        certificate = certificate.not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=10))
+        certificate = certificate.add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()), critical=False)
+
+        for ext in subject.extensions:
+            certificate = certificate.add_extension(ext.value, critical=ext.critical)
+        
+        certificate = certificate.sign(ca_key, hashes.SHA256(), backend=default_backend())
         
         # Write our certificate out to disk.
         with open(certificate_file_name + '.pem', "wb") as f:
-            f.write(cert.public_bytes(serialization.Encoding.PEM))
+            f.write(certificate.public_bytes(serialization.Encoding.PEM))
 
     @staticmethod
     def get_key_usage(digital_signature=False, content_commitment=False, key_encipherment=False, data_encipherment=False, key_agreement=False, key_cert_sign=False, crl_sign=False, encipher_only=False, decipher_only=False):
