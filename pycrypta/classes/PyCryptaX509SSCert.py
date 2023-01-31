@@ -178,8 +178,7 @@ class PyCryptaX509SSCert:
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.backends import default_backend
 
-        subject = PyCryptaX509SSCert.get_csr_from_file('codicus.ru.csr.pem')
-        # subject = csr.subject
+        subject = csr
         issuer = ca_certificate.issuer
 
         certificate = x509.CertificateBuilder()
