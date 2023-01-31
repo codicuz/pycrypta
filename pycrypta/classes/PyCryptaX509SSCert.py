@@ -11,7 +11,7 @@ class PyCryptaX509SSCert:
             6. Вы настраиваете свой сервер для использования этого сертификата в сочетании с вашим закрытым ключом для трафика сервера.
     '''
     @staticmethod
-    def create_private_key():
+    def create_private_key(key_file_name: str, key_pass:str = None):
         '''
             Генерация закрытого ключа.
 
@@ -27,23 +27,36 @@ class PyCryptaX509SSCert:
         # Генерируем наш ключ
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
         
+        if key_pass:
+            # Для генерации ключа с паролем
+            encription = serialization.BestAvailableEncryption(key_pass.encode())
+        else:
+            # Для генерации ключа без пароля
+            encription=serialization.NoEncryption()
+
         # Запишем наш ключ на диск для безопасного хранения
-        with open('mykey.pem', 'wb') as f:
+        with open(key_file_name + '.key.pem', 'wb') as f:
             f.write(key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.TraditionalOpenSSL,
-            
-            # Для генерации ключа с паролем
-            encryption_algorithm=serialization.BestAvailableEncryption(b"pass"),
-            
-            # Для генерации ключа без пароля
-            # encryption_algorithm=serialization.NoEncryption()
+            encryption_algorithm=encription,
         ))
-
+    
+    @staticmethod
+    def get_private_key_from_file(key_file_name:str, key_pass: str = None):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.backends import default_backend
+        with open(key_file_name, 'rb') as f:
+            if key_pass:
+                key = serialization.load_pem_private_key(f.read(), key_pass.encode(), default_backend())
+            else:
+                key = serialization.load_pem_private_key(f.read(), key_pass, default_backend())
+            f.close()
+        
         return key
 
     @staticmethod
-    def create_csr(key):
+    def create_csr(csr_file_name: str, certificate_key):
         '''
             Далее нам нужно сгенерировать запрос на подпись сертификата. Типичный CSR содержит несколько деталей:
                 Информация о нашем открытом ключе (включая подпись всего тела).
@@ -54,7 +67,7 @@ class PyCryptaX509SSCert:
         '''
 
         from cryptography import x509
-        from cryptography.x509.oid import NameOID
+        from cryptography.x509.oid import NameOID, ExtendedKeyUsageOID
         from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.backends import default_backend
@@ -67,19 +80,38 @@ class PyCryptaX509SSCert:
             x509.NameAttribute(NameOID.LOCALITY_NAME, u'MOSCOW'),
             x509.NameAttribute(NameOID.ORGANIZATION_NAME, u'CODICUS'),
             x509.NameAttribute(NameOID.COMMON_NAME, u'codicus.ru')
-        ])).add_extension(
-            x509.SubjectAlternativeName([
-                # Описываем, для каких сайтов мы хотим этот сертификат
-                x509.DNSName(u'codicus.ru'),
-                x509.DNSName(u'gitlab.codicus.ru'),
-                x509.DNSName(u'nexus.codicus.ru')
-            ]),critical=False
+            ])
+            ).add_extension(x509.SubjectKeyIdentifier.from_public_key(certificate_key.public_key()), critical=False
+            
+            ).add_extension(PyCryptaX509SSCert.get_key_usage(digital_signature=True, content_commitment=True, key_encipherment=True), critical=False
+            ).add_extension(x509.ExtendedKeyUsage([
+                ExtendedKeyUsageOID.SERVER_AUTH,
+                ExtendedKeyUsageOID.CLIENT_AUTH]), critical=False
+            ).add_extension(
+                x509.SubjectAlternativeName([
+                    x509.DNSName(u"codicus.ru"),
+                    x509.DNSName(u"gitlab.codicus.ru"),
+                    x509.DNSName(u"nexus.codicus.ru")
+                    ]),
+                critical=False,
             # Подписываем CSR нашим приватным ключом
-        ).sign(key, hashes.SHA256(), backend=default_backend())
-
+            ).sign(certificate_key, hashes.SHA256(), backend=default_backend())
+        
         # Записываем запрос на сертификат (CSR) на диск
-        with open('csr.pem', 'wb') as f:
+        with open(csr_file_name + '.csr.pem', 'wb') as f:
             f.write(csr.public_bytes(serialization.Encoding.PEM))
+            f.close()
+    
+    @staticmethod
+    def get_csr_from_file(csr_file_name:str):
+        from cryptography import x509
+        from cryptography.hazmat.backends import default_backend
+
+        with open(csr_file_name, 'rb') as f:
+            csr = x509.load_pem_x509_csr(f.read(), default_backend())
+            f.close()
+        
+        return csr
     
     @staticmethod
     def create_self_signed_cert(key):
@@ -139,9 +171,42 @@ class PyCryptaX509SSCert:
             f.write(cert.public_bytes(serialization.Encoding.PEM))
     
     @staticmethod
+    def create_ceritificate(ca_certificate, csr, certificate_file_name: str, ca_key, cert_key_pass = None):
+        import datetime
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.backends import default_backend
+
+        subject = PyCryptaX509SSCert.get_csr_from_file('codicus.ru.csr.pem')
+        # subject = csr.subject
+        issuer = ca_certificate.issuer
+
+        cert = x509.CertificateBuilder(
+            ).subject_name(
+                subject.subject
+            ).issuer_name(
+                issuer
+            ).public_key(
+                subject.public_key()
+            ).serial_number(
+                x509.random_serial_number()
+            ).not_valid_before(
+                datetime.datetime.utcnow()
+            ).not_valid_after(
+                # Our certificate will be valid for 10 days
+                datetime.datetime.utcnow() + datetime.timedelta(days=10)
+            ).add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()), critical=False
+            # Sign our certificate with our private key
+            ).sign(ca_key, hashes.SHA256(), backend=default_backend())
+        
+        # Write our certificate out to disk.
+        with open(certificate_file_name + '.pem', "wb") as f:
+            f.write(cert.public_bytes(serialization.Encoding.PEM))
+
+    @staticmethod
     def get_key_usage(digital_signature=False, content_commitment=False, key_encipherment=False, data_encipherment=False, key_agreement=False, key_cert_sign=False, crl_sign=False, encipher_only=False, decipher_only=False):
         from cryptography import x509
-
         return x509.KeyUsage(digital_signature, content_commitment, key_encipherment, data_encipherment, key_agreement, key_cert_sign, crl_sign, encipher_only, decipher_only)
 
     @staticmethod
@@ -182,10 +247,16 @@ class PyCryptaX509SSCert:
             ).add_extension(PyCryptaX509SSCert.get_key_usage(key_cert_sign=True, crl_sign=True), critical=False
             ).sign(key, hashes.SHA256(), default_backend())
 
-        # with open('ca.key.pem', 'wb') as f:
-        #     f.write(key.private_bytes(encoding=serialization.Encoding.PEM,
-        #     format=serialization.PrivateFormat.TraditionalOpenSSL,
-        #     encryption_algorithm=serialization.BestAvailableEncryption(b"pass")))
-
         with open('ca.crt.pem', 'wb') as f:
             f.write(certificate.public_bytes(encoding=serialization.Encoding.PEM))
+        
+    @staticmethod
+    def get_ca_certififcate(ca_certificate_file_name: str):
+        from cryptography import x509
+        from cryptography.hazmat.backends import default_backend
+        
+        with open(ca_certificate_file_name, 'rb') as f:
+            ca_certificate = x509.load_pem_x509_certificate(f.read(), default_backend())
+            f.close()
+        
+        return ca_certificate
